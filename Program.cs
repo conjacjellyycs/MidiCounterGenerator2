@@ -203,6 +203,7 @@ namespace Midi_Counter_Generator
         string pat;
         long alltic = 0;
         int delay;
+        static int resol;
         int toint(int x)
         {
             return x < 0 ? x + 256 : x;
@@ -277,19 +278,47 @@ namespace Midi_Counter_Generator
                     patterns += "\n";
                 }
             }
+            public string tocom(long s)
+            {
+                string S = Convert.ToString(s);
+                string SS = "";
+                for (int i = S.Length - 1; i >= 0; i--)
+                {
+                    if ((S.Length - i) % 3 == 0 && i != 0 && S[i - 1] != '-')
+                    {
+                        SS = "," + S[i] + SS;
+                    }
+                    else
+                    {
+                        SS = S[i] + SS;
+                    }
+                }
+                return SS;
+            }
             public string getstring(long nc, long an, double bp, double tm, long np, long po, long ti, long at)
             {
                 string ss = patterns;
                 ss = ss.Replace("{0}", Convert.ToString(nc));
+                ss = ss.Replace("{0,}", tocom(nc));
                 ss = ss.Replace("{1}", Convert.ToString(an));
+                ss = ss.Replace("{1,}", tocom(an));
                 ss = ss.Replace("{1-0}", Convert.ToString(an - nc));
+                ss = ss.Replace("{1-0,}", tocom(an - nc));
                 ss = ss.Replace("{2}", Convert.ToString(Math.Round(bp * 10) / 10));
                 ss = ss.Replace("{3}", Convert.ToString(Math.Round(tm * 100) / 100));
                 ss = ss.Replace("{4}", Convert.ToString(np));
+                ss = ss.Replace("{4,}", tocom(np));
                 ss = ss.Replace("{5}", Convert.ToString(po));
+                ss = ss.Replace("{5,}", tocom(po));
                 ss = ss.Replace("{6}", Convert.ToString(ti));
+                ss = ss.Replace("{6,}", tocom(ti));
                 ss = ss.Replace("{7}", Convert.ToString(at));
+                ss = ss.Replace("{7,}", tocom(at));
                 ss = ss.Replace("{7-6}", Convert.ToString(at - ti));
+                ss = ss.Replace("{7-6,}", tocom(at - ti));
+                ss = ss.Replace("{8}", Convert.ToString(ti / resol + 1));
+                ss = ss.Replace("{9}", Convert.ToString(at / resol + 1));
+                ss = ss.Replace("{9-8}", Convert.ToString(at / resol - ti / resol));
                 return ss;
             }
             public void draw(long nc, long an, double bp, double tm, long np, long po, long ti, long at, int id, string tmpfol)
@@ -331,7 +360,7 @@ namespace Midi_Counter_Generator
             }
             catch (Exception ex)
             {
-                Console.WriteLine("There was an error starting the ffmpeg process\nIs ffmpeg.exe in the same folder as this program?");
+                Console.WriteLine("{0}\nThere was an error starting the ffmpeg process\nIs ffmpeg.exe in the same folder as this program?",ex.Message);
             }
             return ffmpeg;
         }
@@ -348,7 +377,7 @@ namespace Midi_Counter_Generator
             }
             inp.ReadByte();
             inp.ReadByte();
-            int trkcnt, resol;
+            int trkcnt;
             trkcnt = (toint(inp.ReadByte()) * 256) + toint(inp.ReadByte());
             Console.WriteLine("Track Count: {0}", trkcnt);
             resol = (toint(inp.ReadByte()) * 256) + toint(inp.ReadByte());
@@ -375,7 +404,7 @@ namespace Midi_Counter_Generator
             }
             inp.Close();
             ArrayList bpm = new ArrayList();
-            bpm.Add(new pairli(0, 500000, 0, 0));
+            bpm.Add(new pairli(0, 500000 / resol, 0, 0));
             long noteall = 0;
             int nowtrk = 1;
             Parallel.For(0, trkcnt, trk =>
@@ -391,7 +420,7 @@ namespace Midi_Counter_Generator
                     while (ch >= 128)
                     {
                         ch = toint(tr.ReadFast());
-                        ans = ans * 128 + (ch & 0b11111111);
+                        ans = ans * 128 + (ch & 0b01111111);
                     }
                     return ans;
                 }
@@ -411,10 +440,8 @@ namespace Midi_Counter_Generator
                     if (cm == 0b10010000)
                     {
                         tr.Read();
-                        if (tr.ReadFast() != 0b00000000)
-                        {
-                            notes++;
-                        }
+                        tr.Skip(1);
+                        notes++;
                     }
                     else if (cm == 0b10000000)
                     {
@@ -521,6 +548,7 @@ namespace Midi_Counter_Generator
             tmc[0] = 0;
             for (int i = 1; i < bpm.Count; i++)
             {
+                //Console.WriteLine("{0} {1} {2} {3}",((pairli)bpm[i]).x,((pairli)bpm[i - 1]).x,((pairli)bpm[i - 1]).y,resol);
                 tmc[i] = tmc[i - 1] + (((pairli)bpm[i]).x - ((pairli)bpm[i - 1]).x) * ((pairli)bpm[i - 1]).y;
             }
             Console.WriteLine("Reading pattern...");
@@ -598,7 +626,7 @@ namespace Midi_Counter_Generator
                             do
                             {
                                 c = go();
-                                x = x * 128 + (c & 0b1111111);
+                                x = x * 128 + (c & 0b01111111);
                             } while (c >= 128);
                             return x;
                         }
@@ -629,11 +657,9 @@ namespace Midi_Counter_Generator
                             if (cm == 0b10010000)
                             {
                                 go();
-                                if (go() != 0b00000000)
-                                {
-                                    notecnt++;
-                                    poly++;
-                                }
+                                go();
+                                notecnt++;
+                                poly++;
                             }
                             else if (cm == 0b10000000)
                             {
@@ -715,6 +741,7 @@ namespace Midi_Counter_Generator
                 history[tmdf % fps] = notecnt;
                 tmdf++;
                 tmnow = Convert.ToInt64((tmdf - delay) * 1000000.0 / fps);
+                //Console.WriteLine("{0} {1}", tmc[bpmptr + 1], tmnow);
                 while (bpmptr < bpm.Count - 1 && tmc[bpmptr + 1] < Convert.ToDouble(tmnow))
                 {
                     bpmptr++;
@@ -722,7 +749,7 @@ namespace Midi_Counter_Generator
                 tmm = Convert.ToInt64(((pairli)bpm[bpmptr]).x + (tmnow - tmc[bpmptr]) / ((pairli)bpm[bpmptr]).y);
                 Console.WriteLine("Generated frame {0}, {1} notes.", tmdf - 1, notecnt);
             }
-            for(int i = 0; i < 5 * fps; i++)
+            for (int i = 0; i < 5 * fps; i++)
             {
                 pts.draw(noteall, noteall, 60000000.0 / resol / ((pairli)bpm[bpmptr]).y, 1.0 * (tmdf - delay) / fps, notecnt - history[tmdf % fps], 0, alltic, alltic, tmdf, tmpf);
                 history[tmdf % fps] = noteall;
@@ -757,7 +784,7 @@ namespace Midi_Counter_Generator
     {
         static void Main(string[] args)
         {
-            Console.Title = ("Midi Counter Generator Version 2.0.2.1 by Conjac Jelly Charlieyan");
+            Console.Title = ("Midi Counter Generator Version 2.0.2.4 by Conjac Jelly Charlieyan");
             mainpart bsp = new mainpart();
             bsp.read();
             bsp.Render();
