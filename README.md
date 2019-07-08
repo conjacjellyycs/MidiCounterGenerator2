@@ -1,6 +1,6 @@
 # MidiCounterGenerator2
 Generate a MIDI counter video
-like ![https://www.bilibili.com/video/av58172869/](https://www.bilibili.com/video/av58172869/)
+like https://www.bilibili.com/video/av58172869/
 
 Usage:
 1. Compile Program.cs
