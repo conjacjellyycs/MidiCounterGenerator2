@@ -5,3 +5,6 @@ like https://www.bilibili.com/video/av58172869/
 Usage:
 1. Compile Program.cs
 2. Run the program
+
+Software download:
+Find in my discord server: https://discord.gg/yNmckPJ
