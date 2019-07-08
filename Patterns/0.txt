@@ -1,0 +1,7 @@
+1080
+200
+SimSun
+20
+Notes: {0}
+NPS: {4}
+Polyphony: {5}
