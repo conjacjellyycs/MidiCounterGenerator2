@@ -37,3 +37,5 @@ Pattern variable list:
   {8}: Beats
   {9}: All beats
   {9-8}: Remaining beats
+  {A}: Resolution (PPQ)
+  {A,}: Resolution (PPQ) with a comma per 3 digits
