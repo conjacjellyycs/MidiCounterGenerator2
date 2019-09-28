@@ -1,18 +1,21 @@
 ﻿using System;
 using System.Collections;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Threading.Tasks;
-using System.Diagnostics;
 using System.Threading;
 using System.Drawing;
 using System.Drawing.Imaging;
+using SharpCompress.Archives.Rar;
+using SharpCompress.Archives.SevenZip;
+using SharpCompress.Archives.Tar;
+using SharpCompress.Archives.GZip;
+using SharpCompress.Compressors.Xz;
 
-//namespace Buff(BMEngine) is coded by Arduano
-//https://github.com/arduano/Zenith-MIDI/blob/master/BMEngine/BufferByteReader.cs
-//I was allowed by Arduano to use this namespace
 namespace Buff
 {
     public class BufferByteReader
@@ -64,11 +67,6 @@ namespace Buff
                 }
             });
             nextReader.GetAwaiter().GetResult();
-            //lock (stream)
-            //{
-            //    stream.Position = pos + streamstart;
-            //    stream.Read(buffer, 0, buffersize);
-            //}
             maxbufferpos = (int)Math.Min(streamlen - pos + 1, buffersize);
         }
 
@@ -193,9 +191,60 @@ namespace Midi_Counter_Generator
             }
         }
     }
+    struct pairls
+    {
+        public long x;
+        public String y;
+        public int trk, cnt;
+        public pairls(long a, String b, int c, int d)
+        {
+            x = a;
+            y = b;
+            trk = c;
+            cnt = d;
+        }
+        public static bool operator <(pairls fx, pairls fy)
+        {
+            if (fx.x != fy.x)
+            {
+                return fx.x < fy.x;
+            }
+            else if (fx.trk != fy.trk)
+            {
+                return fx.trk < fy.trk;
+            }
+            else if (fx.cnt != fy.cnt)
+            {
+                return fx.cnt < fy.cnt;
+            }
+            else
+            {
+                return false;
+            }
+        }
+        public static bool operator >(pairls fx, pairls fy)
+        {
+            if (fx.x != fy.x)
+            {
+                return fx.x > fy.x;
+            }
+            else if (fx.trk != fy.trk)
+            {
+                return fx.trk > fy.trk;
+            }
+            else if (fx.cnt != fy.cnt)
+            {
+                return fx.cnt > fy.cnt;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
     class mainpart
     {
-        public string filein, fileout;
+        public static string filein, fileout;
         int isfast;
         BufferedStream inp;
         int fps;
@@ -204,6 +253,7 @@ namespace Midi_Counter_Generator
         long alltic = 0;
         int delay;
         static int resol;
+        static Color Colr;
         int toint(int x)
         {
             return x < 0 ? x + 256 : x;
@@ -211,6 +261,7 @@ namespace Midi_Counter_Generator
         public void read()
         {
             Console.WriteLine("Note: There should be an ffmpeg.exe in Counter's folder.");
+            Console.WriteLine("Note: .zip .xz .gz .7z .tar .rar (or conbinations of '.xz's like .xz.xz) files are allowed, but please use Fast Render on them.");
             string sss = "";
             Console.Write("Input MIDI filename: ");
             filein = Console.ReadLine();
@@ -245,6 +296,22 @@ namespace Midi_Counter_Generator
             Console.WriteLine("If you want to know how to edit patterns, please read README.txt in the Patterns folder.");
             Console.Write("Input pattern ID (Default: 0): ");
             pat = (sss = Console.ReadLine()) == "" ? "0" : sss;
+            Console.Write("Input text color name (Default: White): ");
+            String ssss = (sss = Console.ReadLine()) == "" ? "White" : sss;
+            sss = "";
+            if (ssss[0] > 'Z' || ssss[0] < 'A')
+            {
+                sss += (char)(ssss[0] - 32);
+            }
+            else
+            {
+                sss += ssss[0];
+            }
+            for (int i = 1; i < ssss.Length; i++)
+            {
+                sss += ssss[i];
+            }
+            Colr = Color.FromName(sss);
         }
         void ReportError()
         {
@@ -295,7 +362,7 @@ namespace Midi_Counter_Generator
                 }
                 return SS;
             }
-            public string getstring(long nc, long an, double bp, double tm, long np, long po, long ti, long at)
+            public string getstring(long nc, long an, double bp, double tm, long np, long po, long ti, long at, String lrcs)
             {
                 string ss = patterns;
                 ss = ss.Replace("{0}", Convert.ToString(nc));
@@ -305,7 +372,7 @@ namespace Midi_Counter_Generator
                 ss = ss.Replace("{1-0}", Convert.ToString(an - nc));
                 ss = ss.Replace("{1-0,}", tocom(an - nc));
                 ss = ss.Replace("{2}", Convert.ToString(Math.Round(bp * 10) / 10));
-                ss = ss.Replace("{3}", Convert.ToString(Math.Round(tm * 100) / 100));
+                ss = ss.Replace("{3}", Convert.ToInt32(tm * 100) / 100 + "." + (Convert.ToInt32(tm * 100) % 100 / 10) + (Convert.ToInt32(tm * 100) % 10));
                 ss = ss.Replace("{4}", Convert.ToString(np));
                 ss = ss.Replace("{4,}", tocom(np));
                 ss = ss.Replace("{5}", Convert.ToString(po));
@@ -321,9 +388,10 @@ namespace Midi_Counter_Generator
                 ss = ss.Replace("{9-8}", Convert.ToString(at / resol - ti / resol));
                 ss = ss.Replace("{A}", Convert.ToString(resol));
                 ss = ss.Replace("{A,}", tocom(resol));
+                ss = ss.Replace("{B}", lrcs);
                 return ss;
             }
-            public void draw(long nc, long an, double bp, double tm, long np, long po, long ti, long at, int id, string tmpfol)
+            public void draw(long nc, long an, double bp, double tm, long np, long po, long ti, long at, int id, string tmpfol, string lrcs = "")
             {
                 using (var font = new Font(fon, fontsz))
                 {
@@ -332,9 +400,9 @@ namespace Midi_Counter_Generator
                     {
                         gfx.FillRectangle(Brushes.Transparent, 0, 0, image.Width, image.Height);
 
-                        using (var textBrush = new SolidBrush(Color.White))
+                        using (var textBrush = new SolidBrush(Colr))
                         {
-                            gfx.DrawString(getstring(nc, an, bp, tm, np, po, ti, at), font, textBrush, new PointF(0, 0));
+                            gfx.DrawString(getstring(nc, an, bp, tm, np, po, ti, at, lrcs), font, textBrush, new PointF(0, 0));
                         }
                     }
                     image.Save(tmpfol + id + ".png");
@@ -368,6 +436,12 @@ namespace Midi_Counter_Generator
         }
         void OriginalRender()
         {
+            if (!filein.EndsWith(".mid"))
+            {
+                Console.WriteLine("Zipped files are not allowed to use Original Render. Falling back to Fast Render.");
+                FastRender();
+                return;
+            }
             inp = new BufferedStream(File.Open(filein, FileMode.Open, FileAccess.Read, FileShare.Read), 64);
             for (int i = 0; i < 4; ++i)
             {
@@ -553,7 +627,6 @@ namespace Midi_Counter_Generator
             tmc[0] = 0;
             for (int i = 1; i < bpm.Count; i++)
             {
-                //Console.WriteLine("{0} {1} {2} {3}",((pairli)bpm[i]).x,((pairli)bpm[i - 1]).x,((pairli)bpm[i - 1]).y,resol);
                 tmc[i] = tmc[i - 1] + (((pairli)bpm[i]).x - ((pairli)bpm[i - 1]).x) * ((pairli)bpm[i - 1]).y;
             }
             Console.WriteLine("Reading pattern...");
@@ -605,6 +678,7 @@ namespace Midi_Counter_Generator
             long[] history = new long[fps];
             long poly = 0;
             inp = new BufferedStream(File.Open(filein, FileMode.Open, FileAccess.Read, FileShare.Read), 16384);
+            String lrks = "";
             while (faq > 0)
             {
                 for (int i = 0; i < trkcnt; i++)
@@ -699,7 +773,7 @@ namespace Midi_Counter_Generator
                                 {
                                     go();
                                 }
-                                else if (cmd >= 1 && cmd <= 10 || cmd == 0x7f)
+                                else if (cmd >= 1 && cmd <= 10 && cmd != 5 || cmd == 0x7f)
                                 {
                                     long ff = Go();
                                     while ((ff--) > 0)
@@ -722,6 +796,20 @@ namespace Midi_Counter_Generator
                                 {
                                     go(); go(); go(); go();
                                 }
+                                else if (cmd == 5)
+                                {
+                                    Encoding gb2312 = Encoding.GetEncoding("GB2312");
+                                    Encoding def = Encoding.GetEncoding("UTF-8");
+                                    int ff = (int)Go();
+                                    byte[] S = new byte[ff];
+                                    int cnt = 0;
+                                    while (ff-- > 0)
+                                    {
+                                        S[cnt++] = Convert.ToByte(go());
+                                    }
+                                    S = Encoding.Convert(gb2312, def, S);
+                                    lrks = def.GetString(S);
+                                }
                                 else if (cmd == 0x54 || cmd == 0x58)
                                 {
                                     go(); go(); go(); go(); go();
@@ -742,7 +830,7 @@ namespace Midi_Counter_Generator
                         }
                     }
                 }
-                pts.draw(notecnt, noteall, 60000000.0 / resol / ((pairli)bpm[bpmptr]).y, 1.0 * (tmdf - delay) / fps, notecnt - history[tmdf % fps], poly, tmm > alltic ? alltic : Convert.ToInt64(tmm), alltic, tmdf, tmpf);
+                pts.draw(notecnt, noteall, 60000000.0 / resol / ((pairli)bpm[bpmptr]).y, 1.0 * (tmdf - delay) / fps, notecnt - history[tmdf % fps], poly, tmm > alltic ? alltic : Convert.ToInt64(tmm), alltic, tmdf, tmpf, lrks);
                 history[tmdf % fps] = notecnt;
                 tmdf++;
                 tmnow = Convert.ToInt64((tmdf - delay) * 1000000.0 / fps);
@@ -768,40 +856,171 @@ namespace Midi_Counter_Generator
             Console.WriteLine("Converting finished. Press any key to exit...");
             Console.ReadKey();
         }
+        static bool CanDec(string s)
+        {
+            return s.EndsWith(".mid") || s.EndsWith(".xz") || s.EndsWith(".zip") || s.EndsWith(".7z") || s.EndsWith(".rar") || s.EndsWith(".tar") || s.EndsWith(".gz");
+        }
+        static Stream AddXZLayer(Stream input)
+        {
+            try
+            {
+                Process xz = new Process();
+                xz.StartInfo = new ProcessStartInfo("xz", "-dc --threads=0")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardInput = true,
+                    UseShellExecute = false
+                };
+                xz.Start();
+                Task.Run(() =>
+                {
+                    input.CopyTo(xz.StandardInput.BaseStream);
+                    xz.StandardInput.Close();
+                });
+                return xz.StandardOutput.BaseStream;
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("xz.exe not found, trying internal decompress with lower speed and lower compatibility...");
+                return new XZStream(input);
+            }
+        }
+        static Stream AddZipLayer(Stream input)
+        {
+            var zip = new ZipArchive(input, ZipArchiveMode.Read);
+            foreach (var entry in zip.Entries)
+            {
+                if (CanDec(entry.Name))
+                {
+                    filein = entry.Name;
+                    return entry.Open();
+                }
+            }
+            throw new Exception("No compatible file found in the .zip");
+        }
+        static Stream AddRarLayer(Stream input)
+        {
+            var zip = RarArchive.Open(input);
+            foreach (var entry in zip.Entries)
+            {
+                if (CanDec(entry.Key))
+                {
+                    filein = entry.Key;
+                    return entry.OpenEntryStream();
+                }
+            }
+            throw new Exception("No compatible file found in the .rar");
+        }
+        static Stream Add7zLayer(Stream input)
+        {
+            var zip = SevenZipArchive.Open(input);
+            foreach (var entry in zip.Entries)
+            {
+                if (CanDec(entry.Key))
+                {
+                    filein = entry.Key;
+                    return entry.OpenEntryStream();
+                }
+            }
+            throw new Exception("No compatible file found in the .7z");
+        }
+        static Stream AddTarLayer(Stream input)
+        {
+            var zip = TarArchive.Open(input);
+            foreach (var entry in zip.Entries)
+            {
+                if (CanDec(entry.Key))
+                {
+                    filein = entry.Key;
+                    return entry.OpenEntryStream();
+                }
+            }
+            throw new Exception("No compatible file found in the .tar");
+        }
+        static Stream AddGZLayer(Stream input)
+        {
+            var zip = GZipArchive.Open(input);
+            foreach (var entry in zip.Entries)
+            {
+                if (CanDec(entry.Key))
+                {
+                    filein = entry.Key;
+                    return entry.OpenEntryStream();
+                }
+            }
+            throw new Exception("No compatible file found in the .gz");
+        }
         void FastRender()
         {
-            inp = new BufferedStream(File.Open(filein, FileMode.Open, FileAccess.Read, FileShare.Read), 1048576);
-            for (int i = 0; i < 4; ++i)
+            Stream inpp = File.Open(filein, FileMode.Open, FileAccess.Read, FileShare.Read);
+            while (!filein.EndsWith(".mid"))
             {
-                inp.ReadByte();
+                if (filein.EndsWith(".xz"))
+                {
+                    inpp = AddXZLayer(inpp);
+                    filein = filein.Substring(0, filein.Length - 3);
+                }
+                else if (filein.EndsWith(".zip"))
+                {
+                    inpp = AddZipLayer(inpp);
+                }
+                else if (filein.EndsWith(".rar"))
+                {
+                    inpp = AddRarLayer(inpp);
+                }
+                else if (filein.EndsWith(".7z"))
+                {
+                    inpp = Add7zLayer(inpp);
+                }
+                else if (filein.EndsWith(".tar"))
+                {
+                    inpp = AddTarLayer(inpp);
+                }
+                else if (filein.EndsWith(".gz"))
+                {
+                    inpp = AddGZLayer(inpp);
+                }
+            }
+            int ReadByte()
+            {
+                int b = inpp.ReadByte();
+                if (b == -1) throw new Exception("Unexpected file end");
+                return b;
             }
             for (int i = 0; i < 4; ++i)
             {
-                inp.ReadByte();
+                ReadByte();
             }
-            inp.ReadByte();
-            inp.ReadByte();
+            for (int i = 0; i < 4; ++i)
+            {
+                ReadByte();
+            }
+            ReadByte();
+            ReadByte();
             int trkcnt;
-            trkcnt = (toint(inp.ReadByte()) * 256) + toint(inp.ReadByte());
+            trkcnt = (toint(ReadByte()) * 256) + toint(ReadByte());
             Console.WriteLine("Track Count: {0}", trkcnt);
-            resol = (toint(inp.ReadByte()) * 256) + toint(inp.ReadByte());
+            resol = (toint(ReadByte()) * 256) + toint(ReadByte());
             ArrayList bpm = new ArrayList();
             bpm.Add(new pairli(0, 500000 / resol, 0, 0));
             long noteall = 0;
             int nowtrk = 1;
             ArrayList nts = new ArrayList(), nto = new ArrayList();
+            ArrayList lrcs = new ArrayList();
+            lrcs.Add(new pairls(0, "", -1, -1));
             for (int trk = 0; trk < trkcnt; trk++)
             {
                 int bpmcnt = 0;
+                int lrccnt = 0;
                 long notes = 0;
                 long leng = 0;
-                inp.ReadByte();
-                inp.ReadByte();
-                inp.ReadByte();
-                inp.ReadByte();
-                for(int i = 0; i < 4; i++)
+                ReadByte();
+                ReadByte();
+                ReadByte();
+                ReadByte();
+                for (int i = 0; i < 4; i++)
                 {
-                    leng = leng * 256 + toint(inp.ReadByte());
+                    leng = leng * 256 + toint(ReadByte());
                 }
                 int lstcmd = 256;
                 Console.WriteLine("Reading track {1}/{2}, Size {3}", nowtrk, trk + 1, trkcnt, leng);
@@ -811,7 +1030,7 @@ namespace Midi_Counter_Generator
                     int ch = 256;
                     while (ch >= 128)
                     {
-                        ch = toint(inp.ReadByte());
+                        ch = toint(ReadByte());
                         leng--;
                         ans = ans * 128 + (ch & 0b01111111);
                     }
@@ -826,14 +1045,14 @@ namespace Midi_Counter_Generator
                         return lstcmd2;
                     }
                     leng--;
-                    return toint(inp.ReadByte());
+                    return toint(ReadByte());
                 }
                 int TM = 0;
                 int prvcmd = 256;
                 while (true)
                 {
                     TM += getnum();
-                    int cmd = inp.ReadByte();
+                    int cmd = ReadByte();
                     leng--;
                     if (cmd < 128)
                     {
@@ -845,31 +1064,25 @@ namespace Midi_Counter_Generator
                     if (cm == 0b10010000)
                     {
                         get();
-                        inp.ReadByte();
+                        ReadByte();
                         leng--;
-                        lock (inp)
+                        while (nts.Count <= TM)
                         {
-                            while (nts.Count <= TM)
-                            {
-                                nts.Add(0L);
-                            }
-                            nts[TM] = (Convert.ToInt64(nts[TM]) + 1L);
+                            nts.Add(0L);
                         }
+                        nts[TM] = (Convert.ToInt64(nts[TM]) + 1L);
                         notes++;
                     }
                     else if (cm == 0b10000000)
                     {
                         get();
-                        inp.ReadByte();
+                        ReadByte();
                         leng--;
-                        lock (inp)
+                        while (nto.Count <= TM)
                         {
-                            while (nto.Count <= TM)
-                            {
-                                nto.Add(0L);
-                            }
-                            nto[TM] = (Convert.ToInt64(nto[TM]) + 1L);
+                            nto.Add(0L);
                         }
+                        nto[TM] = (Convert.ToInt64(nto[TM]) + 1L);
                     }
                     else if (cm == 0b11000000 || cm == 0b11010000 || cmd == 0b11110011)
                     {
@@ -878,7 +1091,7 @@ namespace Midi_Counter_Generator
                     else if (cm == 0b11100000 || cm == 0b10110000 || cmd == 0b11110010 || cm == 0b10100000)
                     {
                         get();
-                        inp.ReadByte();
+                        ReadByte();
                         leng--;
                     }
                     else if (cmd == 0b11110000)
@@ -890,7 +1103,7 @@ namespace Midi_Counter_Generator
                         do
                         {
                             leng--;
-                        } while (inp.ReadByte() != 0b11110111);
+                        } while (ReadByte() != 0b11110111);
                     }
                     else if (cmd == 0b11110100 || cmd == 0b11110001 || cmd == 0b11110101 || cmd == 0b11111001 || cmd == 0b11111101 || cmd == 0b11110110 || cmd == 0b11110111 || cmd == 0b11111000 || cmd == 0b11111010 || cmd == 0b11111100 || cmd == 0b11111110)
                     {
@@ -900,49 +1113,62 @@ namespace Midi_Counter_Generator
                         cmd = get();
                         if (cmd == 0)
                         {
-                            inp.ReadByte();
+                            ReadByte();
                             leng--;
                         }
-                        else if (cmd >= 1 && cmd <= 10 || cmd == 0x7f)
+                        else if (cmd >= 1 && cmd <= 10 && cmd != 5 || cmd == 0x7f)
                         {
                             long ff = getnum();
                             while (ff-- > 0)
                             {
-                                inp.ReadByte();
+                                ReadByte();
                                 leng--;
                             }
                         }
                         else if (cmd == 0x20 || cmd == 0x21)
                         {
-                            inp.ReadByte(); inp.ReadByte(); leng -= 2;
+                            ReadByte(); ReadByte(); leng -= 2;
                         }
                         else if (cmd == 0x2f)
                         {
-                            inp.ReadByte();
+                            ReadByte();
                             leng--;
                             break;
                         }
                         else if (cmd == 0x51)
                         {
                             bpmcnt++;
-                            inp.ReadByte();
+                            ReadByte();
                             leng--;
                             int BPM = get();
                             BPM = BPM * 256 + get();
                             BPM = BPM * 256 + get();
-                            lock (inp)
+                            bpm.Add(new pairli(TM, 1.0 * BPM / resol, trk, bpmcnt));
+                        }
+                        else if (cmd == 5)
+                        {
+                            Encoding gb2312 = Encoding.GetEncoding("GB2312");
+                            Encoding def = Encoding.GetEncoding("UTF-8");
+                            lrccnt++;
+                            int ff = (int)getnum();
+                            byte[] S = new byte[ff];
+                            int cnt = 0;
+                            while (ff-- > 0)
                             {
-                                bpm.Add(new pairli(TM, 1.0 * BPM / resol, trk, bpmcnt));
+                                S[cnt++] = Convert.ToByte(ReadByte());
+                                leng--;
                             }
+                            S = Encoding.Convert(gb2312, def, S);
+                            lrcs.Add(new pairls(TM, def.GetString(S), trk, lrccnt));
                         }
                         else if (cmd == 0x54 || cmd == 0x58)
                         {
-                            inp.ReadByte(); inp.ReadByte(); inp.ReadByte(); inp.ReadByte(); inp.ReadByte();
+                            ReadByte(); ReadByte(); ReadByte(); ReadByte(); ReadByte();
                             leng -= 5;
                         }
                         else if (cmd == 0x59)
                         {
-                            inp.ReadByte(); inp.ReadByte(); inp.ReadByte();
+                            ReadByte(); ReadByte(); ReadByte();
                             leng -= 3;
                         }
                         else if (cmd == 0x0a)
@@ -950,7 +1176,7 @@ namespace Midi_Counter_Generator
                             int ss = get();
                             while (ss-- > 0)
                             {
-                                inp.ReadByte();
+                                ReadByte();
                                 leng--;
                             }
                         }
@@ -958,7 +1184,7 @@ namespace Midi_Counter_Generator
                 }
                 while (leng > 0)
                 {
-                    inp.ReadByte();
+                    ReadByte();
                     leng--;
                 }
                 if (TM > alltic)
@@ -987,6 +1213,19 @@ namespace Midi_Counter_Generator
                         pairli xx = (pairli)bpm[i];
                         bpm[j] = bpm[i];
                         bpm[i] = xx;
+                    }
+                }
+            }
+            Console.WriteLine("Sorting lyrics events");
+            for (int i = 0; i < lrcs.Count; i++)
+            {
+                for (int j = i + 1; j < lrcs.Count; j++)
+                {
+                    if (((pairls)lrcs[i]) > ((pairls)lrcs[j]))
+                    {
+                        pairls xx = (pairls)lrcs[i];
+                        lrcs[j] = lrcs[i];
+                        lrcs[i] = xx;
                     }
                 }
             }
@@ -1037,6 +1276,7 @@ namespace Midi_Counter_Generator
             double tmm = 0;
             long notecnt = 0;
             int tmdf = 0;
+            int nowlrc = 0;
             for (int i = 0; i < delay; i++)
             {
                 pts.draw(0, noteall, 120, 0, 0, 0, 0, alltic, tmdf, tmpf);
@@ -1059,7 +1299,11 @@ namespace Midi_Counter_Generator
                     poly += Convert.ToInt64(nts[now]);
                     poly -= Convert.ToInt64(nto[now]);
                 }
-                pts.draw(notecnt, noteall, 60000000.0 / resol / ((pairli)bpm[bpmptr]).y, 1.0 * (tmdf - delay) / fps, notecnt - history[tmdf % fps], poly, tmm > alltic ? alltic : Convert.ToInt64(tmm), alltic, tmdf, tmpf);
+                while (nowlrc < lrcs.Count - 1 && ((pairls)lrcs[nowlrc + 1]).x <= tmm)
+                {
+                    nowlrc++;
+                }
+                pts.draw(notecnt, noteall, 60000000.0 / resol / ((pairli)bpm[bpmptr]).y, 1.0 * (tmdf - delay) / fps, notecnt - history[tmdf % fps], poly, tmm > alltic ? alltic : Convert.ToInt64(tmm), alltic, tmdf, tmpf, ((pairls)lrcs[nowlrc]).y);
                 history[tmdf % fps] = notecnt;
                 tmdf++;
                 tmnow = Convert.ToInt64((tmdf - delay) * 1000000.0 / fps);
@@ -1101,7 +1345,7 @@ namespace Midi_Counter_Generator
     {
         static void Main(string[] args)
         {
-            Console.Title = ("Midi Counter Generator Version 3.0.0.0 by Conjac Jelly Charlieyan");
+            Console.Title = ("Midi Counter Generator Version 4.1.1.0 by Conjac Jelly Charlieyan");
             mainpart bsp = new mainpart();
             bsp.read();
             bsp.Render();
