@@ -39,3 +39,4 @@ Pattern variable list:
   {9-8}: Remaining beats
   {A}: Resolution (PPQ)
   {A,}: Resolution (PPQ) with a comma per 3 digits
+  {B}: Lyrics
